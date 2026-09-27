@@ -1023,3 +1023,27 @@ def test_score_round_wires_persisted_call_id_into_default_factory(
     with SidecarState(tmp_path) as state:
         record = state.get_round("testnet", 123)
     assert record.inference_call_id == "fc-fresh"
+
+
+@pytest.mark.parametrize("strict_mode", [False, True])
+def test_full_score_uses_manifest_parser_version(tmp_path, strict_mode):
+    from validator_scoring_sidecar.scoring.parser_versions import STRICT_PARSER_HASH
+
+    config = _setup(tmp_path)
+    raw = '{"network_summary":"old","network_summary":"new"}'
+    manifest = _manifest()
+    from validator_scoring_sidecar.scoring.parser_versions import LEGACY_PARSER_HASH
+    manifest['code']['parser']['content_sha256'] = (
+        STRICT_PARSER_HASH if strict_mode else LEGACY_PARSER_HASH
+    )
+    strict = compute_verification_hashes(raw, VALIDATOR_MAP, parser_content_hash=STRICT_PARSER_HASH)
+    legacy = compute_verification_hashes(raw, VALIDATOR_MAP)
+    assert strict["validator_scores_hash"] != legacy["validator_scores_hash"]
+    result = score_round(
+        config, FakeClient(), round_id=123,
+        backend_factory=lambda record: FakeBackend(content=raw),
+        foundation_hash_fetcher=lambda *args: dict(strict if strict_mode else legacy),
+        package_fetcher=_make_package_fetcher(manifest),
+    )
+    assert result.status == SCORE_STATUS_SCORED
+    assert result.matched_levels == ['RAW_MATCH', 'PARSED_MATCH']

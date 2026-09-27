@@ -45,8 +45,12 @@ from validator_scoring_sidecar.input_package import canonical_json_hash
 from validator_scoring_sidecar.scoring import (
     ScoringResult,
     apply_formula,
-    parse_response,
     select_unl,
+)
+
+from validator_scoring_sidecar.scoring.parser_versions import (
+    LEGACY_PARSER_HASH,
+    parse_response_for_hash,
 )
 
 VALIDATOR_MAP_RELATIVE_PATH = "inputs/validator_map.json"
@@ -201,6 +205,7 @@ def compute_verification_hashes(
     previous_unl: list[str] | None = None,
     selector_parameters: dict[str, int] | None = None,
     apply_score_formula: bool = False,
+    parser_content_hash: str = LEGACY_PARSER_HASH,
 ) -> dict[str, str]:
     """Compute the sidecar's reproducible verification hashes from a response.
 
@@ -211,10 +216,11 @@ def compute_verification_hashes(
     ``code.selector.parameters``. ``apply_score_formula`` mirrors whether the
     round's manifest carries ``code.score_formula``: formula rounds select over
     the vendored formula's final scores, pre-formula rounds over the model
-    scores directly.
+    scores directly. ``parser_content_hash`` selects the exact parser behavior
+    frozen in the manifest; omission preserves the legacy direct-call API.
     """
 
-    scoring_result = parse_response(raw_text, validator_id_map)
+    scoring_result = parse_response_for_hash(raw_text, validator_id_map, parser_content_hash)
     hashes = {
         HASH_MODEL_RESPONSE: canonical_json_hash(
             build_model_response_document(raw_text)
@@ -249,6 +255,7 @@ def verify_round(
     previous_unl: list[str] | None = None,
     selector_parameters: dict[str, int] | None = None,
     apply_score_formula: bool = False,
+    parser_content_hash: str = LEGACY_PARSER_HASH,
 ) -> VerificationResult:
     """Compute the sidecar hashes and compare them to the foundation's, if given.
 
@@ -267,6 +274,7 @@ def verify_round(
         previous_unl=previous_unl,
         selector_parameters=selector_parameters,
         apply_score_formula=apply_score_formula,
+        parser_content_hash=parser_content_hash,
     )
     if foundation_hashes is None:
         return VerificationResult(
