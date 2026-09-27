@@ -1047,3 +1047,80 @@ def test_full_score_uses_manifest_parser_version(tmp_path, strict_mode):
     )
     assert result.status == SCORE_STATUS_SCORED
     assert result.matched_levels == ['RAW_MATCH', 'PARSED_MATCH']
+
+
+@pytest.mark.parametrize('strict_mode', [False, True])
+def test_full_score_threads_selector_hash(tmp_path, monkeypatch, strict_mode):
+    from validator_scoring_sidecar.scoring.selector_versions import (
+        LEGACY_SELECTOR_HASH, STRICT_SELECTOR_HASH, SELECTORS,
+    )
+    config = _setup(tmp_path)
+    manifest = _manifest()
+    expected = STRICT_SELECTOR_HASH if strict_mode else LEGACY_SELECTOR_HASH
+    manifest['code']['selector']['content_sha256'] = expected
+    manifest['code']['selector']['parameters'] = {
+        'score_cutoff':40, 'max_size':35, 'min_score_gap':5,
+    }
+    calls = []
+    original = SELECTORS[expected]
+
+    def observed(*args, **kwargs):
+        calls.append(expected)
+        return original(*args, **kwargs)
+
+    monkeypatch.setitem(SELECTORS, expected, observed)
+    response = score_round(
+        config, FakeClient(), round_id=123,
+        backend_factory=lambda record: FakeBackend(),
+        foundation_hash_fetcher=lambda *args: None,
+        package_fetcher=_make_package_fetcher(manifest, previous_unl=[]),
+    )
+    assert response.status == "comparison_pending"
+    assert calls == [expected]
+
+
+@pytest.mark.parametrize('parser_strict', [False, True])
+@pytest.mark.parametrize('selector_strict', [False, True])
+@pytest.mark.parametrize('formula', [False, True])
+def test_combined_version_matrix(tmp_path, monkeypatch, parser_strict, selector_strict, formula):
+    from validator_scoring_sidecar.scoring.parser_versions import (
+        PARSERS, LEGACY_PARSER_HASH, STRICT_PARSER_HASH,
+    )
+    from validator_scoring_sidecar.scoring.selector_versions import (
+        SELECTORS, LEGACY_SELECTOR_HASH, STRICT_SELECTOR_HASH,
+    )
+    config = _setup(tmp_path)
+    manifest = _manifest()
+    parser_hash = STRICT_PARSER_HASH if parser_strict else LEGACY_PARSER_HASH
+    selector_hash = STRICT_SELECTOR_HASH if selector_strict else LEGACY_SELECTOR_HASH
+    parameters = {'score_cutoff':40, 'max_size':35, 'min_score_gap':5}
+    manifest['code']['parser']['content_sha256'] = parser_hash
+    manifest['code']['selector']['content_sha256'] = selector_hash
+    manifest['code']['selector']['parameters'] = parameters
+    if formula:
+        manifest['code']['score_formula'] = {
+            'content_sha256':next(iter(SUPPORTED_SCORE_FORMULA_CONTENT_HASHES)),
+        }
+    # Valid input/caps must reproduce the historical golden output regardless
+    # of the independently selected parser and selector versions.
+    expected = compute_verification_hashes(RAW_RESPONSE, VALIDATOR_MAP,
+        previous_unl=[], selector_parameters=parameters, apply_score_formula=formula)
+    seen = []
+    parse, select = PARSERS[parser_hash], SELECTORS[selector_hash]
+
+    def traced_parse(*args, **kwargs):
+        seen.append(('parser', parser_hash))
+        return parse(*args, **kwargs)
+
+    def traced_select(*args, **kwargs):
+        seen.append(('selector', selector_hash))
+        return select(*args, **kwargs)
+
+    monkeypatch.setitem(PARSERS, parser_hash, traced_parse)
+    monkeypatch.setitem(SELECTORS, selector_hash, traced_select)
+    outcome = score_round(config, FakeClient(), round_id=123,
+        backend_factory=lambda record: FakeBackend(),
+        foundation_hash_fetcher=lambda *args: dict(expected),
+        package_fetcher=_make_package_fetcher(manifest, previous_unl=[]))
+    assert outcome.matched_levels == ['RAW_MATCH', 'PARSED_MATCH', 'SELECTED_UNL_MATCH']
+    assert seen == [('parser', parser_hash), ('selector', selector_hash)]

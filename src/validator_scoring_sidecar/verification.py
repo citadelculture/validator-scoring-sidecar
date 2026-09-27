@@ -45,12 +45,16 @@ from validator_scoring_sidecar.input_package import canonical_json_hash
 from validator_scoring_sidecar.scoring import (
     ScoringResult,
     apply_formula,
-    select_unl,
 )
 
 from validator_scoring_sidecar.scoring.parser_versions import (
     LEGACY_PARSER_HASH,
     parse_response_for_hash,
+)
+
+from validator_scoring_sidecar.scoring.selector_versions import (
+    LEGACY_SELECTOR_HASH,
+    select_unl_for_hash,
 )
 
 VALIDATOR_MAP_RELATIVE_PATH = "inputs/validator_map.json"
@@ -206,6 +210,7 @@ def compute_verification_hashes(
     selector_parameters: dict[str, int] | None = None,
     apply_score_formula: bool = False,
     parser_content_hash: str = LEGACY_PARSER_HASH,
+    selector_content_hash: str = LEGACY_SELECTOR_HASH,
 ) -> dict[str, str]:
     """Compute the sidecar's reproducible verification hashes from a response.
 
@@ -233,8 +238,9 @@ def compute_verification_hashes(
         selection_input = (
             apply_formula(scoring_result) if apply_score_formula else scoring_result
         )
-        unl_result = select_unl(
+        unl_result = select_unl_for_hash(
             selection_input,
+            selector_content_hash,
             cutoff=selector_parameters["score_cutoff"],
             max_size=selector_parameters["max_size"],
             min_gap=selector_parameters["min_score_gap"],
@@ -256,6 +262,7 @@ def verify_round(
     selector_parameters: dict[str, int] | None = None,
     apply_score_formula: bool = False,
     parser_content_hash: str = LEGACY_PARSER_HASH,
+    selector_content_hash: str = LEGACY_SELECTOR_HASH,
 ) -> VerificationResult:
     """Compute the sidecar hashes and compare them to the foundation's, if given.
 
@@ -275,6 +282,7 @@ def verify_round(
         selector_parameters=selector_parameters,
         apply_score_formula=apply_score_formula,
         parser_content_hash=parser_content_hash,
+        selector_content_hash=selector_content_hash,
     )
     if foundation_hashes is None:
         return VerificationResult(
