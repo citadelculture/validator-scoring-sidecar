@@ -1,7 +1,7 @@
 """Dispatch parser behavior by the source hash frozen in each round.
 
 The legacy default preserves callers and historical rounds. The strict parser
-is the adapted source from dynamic-unl-scoring PR57 at f0d64987116c92e06effcb218864cf2da08256d9.
+is the adapted source from dynamic-unl-scoring PR57 at 18cf3ef94f6ec217f2cf38acf10f8b2a40413316.
 Unknown hashes fail closed, including callers outside the manifest gate.
 """
 
